@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>D2R Twink Test UI</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: monospace;
+    background: #111;
+    color: #ccc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  .wrap { width: 100%; max-width: 420px; }
+  h1 { color: #c89b3c; font-size: 18px; letter-spacing: 3px; text-align: center; margin-bottom: 24px; }
+
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 11px; color: #666; margin-bottom: 4px; }
+  .field input {
+    width: 100%;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 3px;
+    color: #ccc;
+    font-family: monospace;
+    font-size: 13px;
+    padding: 8px 10px;
+    outline: none;
+  }
+  .field input:focus { border-color: #c89b3c; }
+
+  .status {
+    font-size: 12px;
+    padding: 8px 12px;
+    border-radius: 3px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; flex-shrink: 0; }
+  .dot.ok  { background: #27ae60; }
+  .dot.err { background: #c0392b; }
+
+  .btn-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .btn {
+    padding: 16px 8px;
+    border: 1px solid #333;
+    border-radius: 3px;
+    background: transparent;
+    color: #ccc;
+    font-family: monospace;
+    font-size: 13px;
+    cursor: pointer;
+    text-align: center;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .btn:hover  { border-color: #c89b3c; color: #c89b3c; background: rgba(200,155,60,.07); }
+  .btn:active { opacity: .7; }
+  .btn:disabled { opacity: .3; cursor: not-allowed; }
+  .btn small { display: block; font-size: 10px; color: #555; margin-top: 3px; }
+
+  .log {
+    background: #0d0d0d;
+    border: 1px solid #222;
+    border-radius: 3px;
+    padding: 10px;
+    font-size: 12px;
+    height: 140px;
+    overflow-y: auto;
+    color: #555;
+  }
+  .log .ok   { color: #27ae60; }
+  .log .err  { color: #c0392b; }
+  .log .info { color: #c89b3c; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>D2R TEST UI</h1>
+
+  <div class="field">
+    <label>TwinkPC WebSocket URL</label>
+    <input type="text" id="ws-url" placeholder="ws://192.168.1.X:8765" value="ws://localhost:8765">
+  </div>
+  <div class="field">
+    <label>Secret</label>
+    <input type="password" id="secret" placeholder="d2r-secret-change-me" value="d2r-secret-change-me">
+  </div>
+  <div class="field">
+    <label>Game name</label>
+    <input type="text" id="game-name" placeholder="zk-1">
+  </div>
+
+  <div class="status" id="status">
+    <span class="dot" id="dot"></span>
+    <span id="status-text">not connected</span>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn" id="btn-join" onclick="send('join')">
+      JOIN<small>F9</small>
+    </button>
+    <button class="btn" id="btn-next" onclick="doNext()">
+      NEXT<small>F10</small>
+    </button>
+    <button class="btn" id="btn-exit" onclick="send('save_and_exit')">
+      EXIT<small>F12</small>
+    </button>
+  </div>
+
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+  function doNext() {
+    const el = document.getElementById("game-name");
+    const gameName = el.value.trim();
+    if (!gameName) { log("Enter a game name first.", "err"); return; }
+    const parts = gameName.split("-");
+    if (parts.length < 2 || isNaN(parts[parts.length - 1])) {
+      log("Game name must be in format 'name-N' (e.g. zk-1)", "err"); return;
+    }
+
+    // Step 1: Exit
+    setButtons(false);
+    log("→ step 1: exit...", "info");
+    sendCmd("save_and_exit", null, () => {
+      // Step 2: Increment name
+      const prefix = parts.slice(0, -1).join("-");
+      const next = parseInt(parts[parts.length - 1]) + 1;
+      el.value = `${prefix}-${next}`;
+      log(`→ step 2: game name → ${el.value}`, "info");
+      // Step 3: Join
+      setTimeout(() => {
+        log("→ step 3: join...", "info");
+        sendCmd("join", el.value, () => setButtons(true));
+      }, 500);
+    });
+  }
+
+  function sendCmd(action, gameNameOverride, onSuccess) {
+    const url    = document.getElementById("ws-url").value.trim();
+    const secret = document.getElementById("secret").value.trim();
+    const gameName = gameNameOverride || document.getElementById("game-name").value.trim();
+
+    if (!url)    { log("Enter WebSocket URL.", "err"); return; }
+    if (!secret) { log("Enter secret.", "err"); return; }
+    if ((action === "join") && !gameName) {
+      log("Enter a game name.", "err"); return;
+    }
+
+    const payload = { secret, action };
+    if (gameName) payload.game_name = gameName;
+
+    try {
+      const ws = new WebSocket(url);
+      ws.onopen = () => {
+        setStatus("ok", "connected");
+        ws.send(JSON.stringify(payload));
+      };
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.status === "OK") {
+          log("✓ " + data.detail, "ok");
+          if (onSuccess) onSuccess();
+        } else {
+          log("✗ " + data.detail, "err");
+          setButtons(true);
+        }
+        ws.close();
+      };
+      ws.onerror = () => {
+        setStatus("err", "connection failed");
+        log("✗ Could not connect to TwinkPC.", "err");
+        setButtons(true);
+      };
+      ws.onclose = () => setStatus("", "disconnected");
+    } catch (e) {
+      log("✗ " + e.message, "err");
+      setButtons(true);
+    }
+  }
+
+  async function send(action) {
+    const url      = document.getElementById("ws-url").value.trim();
+    const secret   = document.getElementById("secret").value.trim();
+    const gameName = document.getElementById("game-name").value.trim();
+
+    if (!url)    { log("Enter WebSocket URL.", "err"); return; }
+    if (!secret) { log("Enter secret.", "err"); return; }
+    if ((action === "join" || action === "next_game") && !gameName) {
+      log("Enter a game name.", "err"); return;
+    }
+
+    setButtons(false);
+    setStatus("", "connecting...");
+
+    const payload = { secret, action };
+    if (gameName) payload.game_name = gameName;
+
+    try {
+      const ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        setStatus("ok", "connected");
+        log(`→ ${action}${gameName ? " " + gameName : ""}`, "info");
+        ws.send(JSON.stringify(payload));
+      };
+
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.status === "OK") {
+          log("✓ " + data.detail, "ok");
+        } else {
+          log("✗ " + data.detail, "err");
+        }
+        ws.close();
+      };
+
+      ws.onerror = () => {
+        setStatus("err", "connection failed");
+        log("✗ Could not connect to TwinkPC.", "err");
+      };
+
+      ws.onclose = () => {
+        setStatus("", "disconnected");
+        setButtons(true);
+      };
+
+    } catch (e) {
+      log("✗ " + e.message, "err");
+      setStatus("err", "error");
+      setButtons(true);
+    }
+  }
+
+  function log(msg, cls = "") {
+    const el = document.getElementById("log");
+    const line = document.createElement("div");
+    const t = new Date().toLocaleTimeString();
+    line.className = cls;
+    line.textContent = `[${t}] ${msg}`;
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function setStatus(state, text) {
+    document.getElementById("dot").className = "dot " + state;
+    document.getElementById("status-text").textContent = text;
+  }
+
+  function setButtons(enabled) {
+    ["btn-join", "btn-next", "btn-exit"].forEach(id => {
+      document.getElementById(id).disabled = !enabled;
+    });
+  }
+</script>
+</body>
+</html>

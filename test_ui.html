@@ -87,8 +87,11 @@
   <h1>D2R TEST UI</h1>
 
   <div class="field">
-    <label>TwinkPC WebSocket URL</label>
-    <input type="text" id="ws-url" placeholder="ws://192.168.1.X:8765" value="ws://localhost:8765">
+    <label>TwinkPC hostname</label>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="color:#555;font-size:13px;white-space:nowrap">wss://</span>
+      <input type="text" id="ws-host" placeholder="xxxx.trycloudflare.com" style="flex:1">
+    </div>
   </div>
   <div class="field">
     <label>Secret</label>
@@ -147,11 +150,12 @@
   }
 
   function sendCmd(action, gameNameOverride, onSuccess) {
-    const url    = document.getElementById("ws-url").value.trim();
+    const host   = document.getElementById("ws-host").value.trim().replace(/^wss?:\/\//, "");
+    const url    = `wss://${host}`;
     const secret = document.getElementById("secret").value.trim();
     const gameName = gameNameOverride || document.getElementById("game-name").value.trim();
 
-    if (!url)    { log("Enter WebSocket URL.", "err"); return; }
+    if (!host)   { log("Enter WebSocket hostname.", "err"); return; }
     if (!secret) { log("Enter secret.", "err"); return; }
     if ((action === "join") && !gameName) {
       log("Enter a game name.", "err"); return;
@@ -190,11 +194,12 @@
   }
 
   async function send(action) {
-    const url      = document.getElementById("ws-url").value.trim();
+    const host     = document.getElementById("ws-host").value.trim().replace(/^wss?:\/\//, "");
+    const url      = `wss://${host}`;
     const secret   = document.getElementById("secret").value.trim();
     const gameName = document.getElementById("game-name").value.trim();
 
-    if (!url)    { log("Enter WebSocket URL.", "err"); return; }
+    if (!host)   { log("Enter WebSocket hostname.", "err"); return; }
     if (!secret) { log("Enter secret.", "err"); return; }
     if ((action === "join" || action === "next_game") && !gameName) {
       log("Enter a game name.", "err"); return;
